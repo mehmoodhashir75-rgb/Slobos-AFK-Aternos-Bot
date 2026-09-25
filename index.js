@@ -1397,238 +1397,34 @@ function scheduleReconnect() {
 function initializeModules(bot, mcData, defaultMove) {
   addLog("[Modules] Initializing all modules...");
 
-  // ---------- AUTO AUTH (REACTIVE) ----------
-  if (config.utils["auto-auth"] && config.utils["auto-auth"].enabled) {
-    const password = config.utils["auto-auth"].password;
-    let authHandled = false;
-
-    const tryAuth = (type) => {
-      if (authHandled || !bot || !botState.connected) return;
-      authHandled = true;
-      if (type === "register") {
-        bot.chat(`/register ${password} ${password}`);
-        addLog("[Auth] Detected register prompt - sent /register");
-      } else {
-        bot.chat(`/login ${password}`);
-        addLog("[Auth] Detected login prompt - sent /login");
-      }
-    };
-
-    bot.on("messagestr", (message) => {
-      if (authHandled) return;
-      const msg = message.toLowerCase();
-      if (
-        msg.includes("/register") ||
-        msg.includes("register ") ||
-        msg.includes("지정된 비밀번호")
-      ) {
-        tryAuth("register");
-      } else if (
-        msg.includes("/login") ||
-        msg.includes("login ") ||
-        msg.includes("로그인")
-      ) {
-        tryAuth("login");
-      }
-    });
-
-    // Failsafe: if no prompt after 10s, try login anyway
-    setTimeout(() => {
-      if (!authHandled && bot && botState.connected) {
-        addLog(
-          "[Auth] No prompt detected after 10s, sending /login as failsafe",
-        );
-        bot.chat(`/login ${password}`);
-        authHandled = true;
-      }
-    }, 10000);
-  }
+  // ---------- AUTO AUTH ----------
+  // Completely disabled.
+  // This bot will NEVER automatically send /login or /register.
+  addLog("[Auth] Auto-auth disabled.");
 
   // ---------- CHAT MESSAGES ----------
-  if (config.utils["chat-messages"] && config.utils["chat-messages"].enabled) {
-    const messages = config.utils["chat-messages"].messages;
-    if (config.utils["chat-messages"].repeat) {
-      let i = 0;
-      addInterval(() => {
-        if (bot && botState.connected) {
-          bot.chat(messages[i]);
-          botState.lastActivity = Date.now();
-          i = (i + 1) % messages.length;
-        }
-      }, config.utils["chat-messages"]["repeat-delay"] * 1000);
-    } else {
-      messages.forEach((msg, idx) => {
-        setTimeout(() => {
-          if (bot && botState.connected) bot.chat(msg);
-        }, idx * 1000);
-      });
-    }
-  }
-
-  // ---------- MOVE TO POSITION ----------
-  // FIX: only use position goal if circle-walk is NOT enabled (they fight over pathfinder)
   if (
-    config.position &&
-    config.position.enabled &&
-    !(
-      config.movement &&
-      config.movement["circle-walk"] &&
-      config.movement["circle-walk"].enabled
-    )
+    config.utils["chat-messages"] &&
+    config.utils["chat-messages"].enabled
   ) {
-    bot.pathfinder.setMovements(defaultMove);
-    bot.pathfinder.setGoal(
-      new GoalBlock(config.position.x, config.position.y, config.position.z),
-    );
-    addLog("[Position] Navigating to configured position...");
-  }
+    const messages = config.utils["chat-messages"].messages || [];
+    const repeatDelay =
+      (config.utils["chat-messages"].repeatDelay || 120) * 1000;
 
-  // ---------- ANTI-AFK ----------
-  if (config.utils["anti-afk"] && config.utils["anti-afk"].enabled) {
-    // Arm swinging
-    addInterval(
-      () => {
+    if (messages.length > 0) {
+      let messageIndex = 0;
+
+      setInterval(() => {
         if (!bot || !botState.connected) return;
-        try {
-          bot.swingArm();
-        } catch (e) {}
-      },
-      10000 + Math.floor(Math.random() * 50000),
-    );
 
-    // Hotbar cycling
-    addInterval(
-      () => {
-        if (!bot || !botState.connected) return;
-        try {
-          const slot = Math.floor(Math.random() * 9);
-          bot.setQuickBarSlot(slot);
-        } catch (e) {}
-      },
-      30000 + Math.floor(Math.random() * 90000),
-    );
-
-    // Teabagging
-    addInterval(
-      () => {
-        if (
-          !bot ||
-          !botState.connected ||
-          typeof bot.setControlState !== "function"
-        )
-          return;
-        if (Math.random() > 0.9) {
-          let count = 2 + Math.floor(Math.random() * 4);
-          const doTeabag = () => {
-            if (count <= 0 || !bot || typeof bot.setControlState !== "function")
-              return;
-            try {
-              bot.setControlState("sneak", true);
-              setTimeout(() => {
-                if (bot && typeof bot.setControlState === "function")
-                  bot.setControlState("sneak", false);
-                count--;
-                setTimeout(doTeabag, 150);
-              }, 150);
-            } catch (e) {}
-          };
-          doTeabag();
-        }
-      },
-      120000 + Math.floor(Math.random() * 180000),
-    );
-
-    // FIX: micro-walk only when circle-walk is NOT running, to avoid interrupting pathfinder
-    if (
-      !(
-        config.movement &&
-        config.movement["circle-walk"] &&
-        config.movement["circle-walk"].enabled
-      )
-    ) {
-      addInterval(
-        () => {
-          if (
-            !bot ||
-            !botState.connected ||
-            typeof bot.setControlState !== "function"
-          )
-            return;
-          try {
-            const yaw = Math.random() * Math.PI * 2;
-            bot.look(yaw, 0, true);
-            bot.setControlState("forward", true);
-            setTimeout(
-              () => {
-                if (bot && typeof bot.setControlState === "function")
-                  bot.setControlState("forward", false);
-              },
-              500 + Math.floor(Math.random() * 1500),
-            );
-            botState.lastActivity = Date.now();
-          } catch (e) {
-            addLog("[AntiAFK] Walk error:", e.message);
-          }
-        },
-        120000 + Math.floor(Math.random() * 360000),
-      );
+        bot.chat(messages[messageIndex]);
+        messageIndex = (messageIndex + 1) % messages.length;
+      }, repeatDelay);
     }
-
-    if (config.utils["anti-afk"].sneak) {
-      try {
-        if (typeof bot.setControlState === "function")
-          bot.setControlState("sneak", true);
-      } catch (e) {}
-    }
-  }
-
-  // ---------- MOVEMENT MODULES ----------
-  // FIX: check top-level movement.enabled flag
-  if (config.movement && config.movement.enabled !== false) {
-    // FIX: circle-walk and random-jump both jump - only run one jumping mechanism
-    // random-jump is skipped if anti-afk jump is handled elsewhere; we only use random-jump here
-    if (
-      config.movement["circle-walk"] &&
-      config.movement["circle-walk"].enabled
-    ) {
-      startCircleWalk(bot, defaultMove);
-    }
-    // FIX: only run random-jump if circle-walk is NOT running (circle-walk also keeps bot moving)
-    if (
-      config.movement["random-jump"] &&
-      config.movement["random-jump"].enabled &&
-      !(
-        config.movement["circle-walk"] && config.movement["circle-walk"].enabled
-      )
-    ) {
-      startRandomJump(bot);
-    }
-    if (
-      config.movement["look-around"] &&
-      config.movement["look-around"].enabled
-    ) {
-      startLookAround(bot);
-    }
-  }
-
-  // ---------- CUSTOM MODULES ----------
-  // FIX: avoidMobs AND combatModule conflict - if combat is enabled, don't run avoidMobs at the same time
-  if (config.modules.avoidMobs && !config.modules.combat) {
-    avoidMobs(bot);
-  }
-  if (config.modules.combat) {
-    combatModule(bot, mcData);
-  }
-  if (config.modules.beds) {
-    bedModule(bot, mcData);
-  }
-  if (config.modules.chat) {
-    chatModule(bot);
   }
 
   addLog("[Modules] All modules initialized!");
 }
-
 // ============================================================
 // MOVEMENT HELPERS
 // ============================================================
